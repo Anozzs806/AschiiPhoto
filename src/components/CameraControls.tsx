@@ -5,6 +5,7 @@ import { sound } from '../services/audio';
 
 interface CameraControlsProps {
   isStreaming: boolean;
+  isSwitching?: boolean;
   countdownDuration: number;
   onSetCountdown: (duration: number) => void;
   isMirrored: boolean;
@@ -20,6 +21,7 @@ interface CameraControlsProps {
 
 export const CameraControls: React.FC<CameraControlsProps> = ({
   isStreaming,
+  isSwitching = false,
   countdownDuration,
   onSetCountdown,
   isMirrored,
@@ -102,14 +104,22 @@ export const CameraControls: React.FC<CameraControlsProps> = ({
           {/* Front / Back switch (Essential for mobile) */}
           <button
             onClick={() => {
+              if (isSwitching) return;
               sound.playKeyClick();
               onToggleFacingMode();
             }}
+            disabled={isSwitching}
             title="Switch Front / Back Camera"
-            className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg border border-[#E5E5E5] bg-[#FFFFFF] text-[#525252] hover:bg-[#F5F5F5] hover:text-[#171717] text-xs font-medium transition-colors"
+            className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg border border-[#E5E5E5] bg-[#FFFFFF] text-[#525252] hover:bg-[#F5F5F5] hover:text-[#171717] text-xs font-medium transition-colors disabled:opacity-60"
           >
-            <SwitchCamera className="w-3.5 h-3.5" />
-            <span>{facingMode === 'user' ? 'Front' : 'Back'}</span>
+            {isSwitching ? (
+              <RotateCw className="w-3.5 h-3.5 animate-spin" />
+            ) : (
+              <SwitchCamera className="w-3.5 h-3.5" />
+            )}
+            <span>
+              {isSwitching ? 'Switching...' : facingMode === 'user' ? 'Front' : 'Back'}
+            </span>
           </button>
         </div>
       </div>
