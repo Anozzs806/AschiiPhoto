@@ -33,10 +33,10 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
           <div>
             <h1 className="text-xs sm:text-sm font-semibold tracking-tight text-[#171717] leading-none">
-              COLOR ASCII PHOTOBOOTH
+              Hellow :P
             </h1>
             <p className="text-[10px] sm:text-[11px] text-[#737373] hidden md:block mt-0.5">
-              Real-time RGB ASCII camera & print studio
+              have fun 
             </p>
           </div>
         </div>
