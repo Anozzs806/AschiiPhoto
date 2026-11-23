@@ -280,7 +280,7 @@ export function App() {
         <div className="max-w-5xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2">
           <span>Made By</span>
           <span className="text-[11px] text-[#A3A3A3]">
-            -Anozzs
+            Anozzs
           </span>
         </div>
       </footer>
