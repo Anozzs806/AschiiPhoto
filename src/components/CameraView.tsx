@@ -44,7 +44,6 @@ export const CameraView = forwardRef<CameraViewHandle, CameraViewProps>(({
   const sampleCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const mockCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
-  // Keep a persistent ref to stream to avoid stale closure issues
   const streamRef = useRef<MediaStream | null>(null);
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [cameraError, setCameraError] = useState<string | null>(null);
@@ -53,6 +52,9 @@ export const CameraView = forwardRef<CameraViewHandle, CameraViewProps>(({
   const [countdownNumber, setCountdownNumber] = useState<number | null>(null);
   const [showFlash, setShowFlash] = useState(false);
   const [useMockCamera, setUseMockCamera] = useState(false);
+
+  // Dynamic aspect ratio tracking (e.g. 9/16 for phone portrait, 16/9 for desktop/landscape)
+  const [streamAspect, setStreamAspect] = useState<number | null>(null);
 
   const frameCountRef = useRef(0);
   const lastFpsTimeRef = useRef(performance.now());
@@ -66,22 +68,19 @@ export const CameraView = forwardRef<CameraViewHandle, CameraViewProps>(({
   const getResolutionConstraints = useCallback((res: CameraResolution) => {
     switch (res) {
       case '1080p':
-        return { width: { ideal: 1920, max: 1920 }, height: { ideal: 1080, max: 1080 } };
+        return { width: { ideal: 1920 }, height: { ideal: 1080 } };
       case '480p':
-        return { width: { ideal: 640, max: 640 }, height: { ideal: 480, max: 480 } };
+        return { width: { ideal: 640 }, height: { ideal: 480 } };
       case '720p':
       default:
-        return { width: { ideal: 1280, max: 1280 }, height: { ideal: 720, max: 720 } };
+        return { width: { ideal: 1280 }, height: { ideal: 720 } };
     }
   }, []);
 
-  // Safe stop helper
   const safelyStopActiveTracks = useCallback(() => {
     if (streamRef.current) {
       try {
-        streamRef.current.getTracks().forEach((track) => {
-          track.stop();
-        });
+        streamRef.current.getTracks().forEach((track) => track.stop());
       } catch (e) {
         console.warn('Error stopping tracks:', e);
       }
@@ -96,15 +95,12 @@ export const CameraView = forwardRef<CameraViewHandle, CameraViewProps>(({
     setStream(null);
   }, []);
 
-  // Start / Restart real webcam stream cleanly
   const startCamera = useCallback(async (targetRes: CameraResolution = resolution) => {
     setCameraError(null);
     setUseMockCamera(false);
     setIsReconnecting(true);
 
     safelyStopActiveTracks();
-
-    // Small delay to ensure OS camera lock is fully released before acquiring a new stream
     await new Promise((r) => setTimeout(r, 60));
 
     try {
@@ -122,8 +118,7 @@ export const CameraView = forwardRef<CameraViewHandle, CameraViewProps>(({
       try {
         mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
       } catch (firstErr) {
-        console.warn('Initial resolution request failed, trying flexible fallback:', firstErr);
-        // Fallback to basic video constraints if specific resolution was rejected (common on mobile)
+        console.warn('Strict constraints failed, falling back to ideal facingMode:', firstErr);
         mediaStream = await navigator.mediaDevices.getUserMedia({
           video: { facingMode: { ideal: facingMode } },
           audio: false,
@@ -135,11 +130,14 @@ export const CameraView = forwardRef<CameraViewHandle, CameraViewProps>(({
 
       if (videoRef.current) {
         videoRef.current.srcObject = mediaStream;
-        // Wait for loadedmetadata to prevent frozen black canvas
         await new Promise<void>((resolve) => {
           if (!videoRef.current) return resolve();
-          videoRef.current.onloadedmetadata = () => resolve();
-          // Timeout fallback
+          videoRef.current.onloadedmetadata = () => {
+            if (videoRef.current && videoRef.current.videoWidth > 0 && videoRef.current.videoHeight > 0) {
+              setStreamAspect(videoRef.current.videoWidth / videoRef.current.videoHeight);
+            }
+            resolve();
+          };
           setTimeout(resolve, 500);
         });
         await videoRef.current.play().catch(() => {});
@@ -158,7 +156,6 @@ export const CameraView = forwardRef<CameraViewHandle, CameraViewProps>(({
     }
   }, [facingMode, getResolutionConstraints, onAddLog, onStreamStatusChange, resolution, safelyStopActiveTracks]);
 
-  // Clean stop
   const stopCamera = useCallback(() => {
     safelyStopActiveTracks();
     if (animFrameIdRef.current) {
@@ -169,25 +166,25 @@ export const CameraView = forwardRef<CameraViewHandle, CameraViewProps>(({
     onAddLog('CAM', 'Camera stopped.');
   }, [onAddLog, onStreamStatusChange, safelyStopActiveTracks]);
 
-  // Refresh camera (specifically requested by user to unstuck or re-acquire)
   const refreshCamera = useCallback(() => {
     sound.playKeyClick();
     onAddLog('CAM', 'Refreshing camera stream...');
     startCamera(resolution);
   }, [onAddLog, resolution, startCamera]);
 
-  // Handle resolution change cleanly using applyConstraints first, then falling back to restart
   useEffect(() => {
     let isCancelled = false;
 
     const applyNewResolution = async () => {
-      // If we already have an active track, try to apply constraints without tearing down the stream
       const currentTrack = streamRef.current?.getVideoTracks()[0];
       if (currentTrack && currentTrack.readyState === 'live') {
         try {
           setIsReconnecting(true);
           const constraints = getResolutionConstraints(resolution);
           await currentTrack.applyConstraints(constraints);
+          if (videoRef.current && videoRef.current.videoWidth > 0) {
+            setStreamAspect(videoRef.current.videoWidth / videoRef.current.videoHeight);
+          }
           onAddLog('CAM', `Resolution changed to ${resolution}`);
           setIsReconnecting(false);
           return;
@@ -196,7 +193,6 @@ export const CameraView = forwardRef<CameraViewHandle, CameraViewProps>(({
         }
       }
 
-      // If applyConstraints didn't work, do a full clean restart
       if (!isCancelled) {
         startCamera(resolution);
       }
@@ -210,12 +206,12 @@ export const CameraView = forwardRef<CameraViewHandle, CameraViewProps>(({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [resolution, facingMode]);
 
-  // Toggle simulation mode
   const toggleMockCamera = useCallback(() => {
     if (!useMockCamera) {
       safelyStopActiveTracks();
       setCameraError(null);
       setUseMockCamera(true);
+      setStreamAspect(960 / 540); // 16:9 for simulation
       onStreamStatusChange(true);
       onAddLog('SYS', 'Test simulation feed activated.');
     } else {
@@ -225,7 +221,6 @@ export const CameraView = forwardRef<CameraViewHandle, CameraViewProps>(({
     }
   }, [onAddLog, onStreamStatusChange, safelyStopActiveTracks, useMockCamera]);
 
-  // Cleanup on unmount
   useEffect(() => {
     return () => {
       safelyStopActiveTracks();
@@ -327,6 +322,14 @@ export const CameraView = forwardRef<CameraViewHandle, CameraViewProps>(({
         const srcWidth = useMockCamera ? 960 : video!.videoWidth || 1280;
         const srcHeight = useMockCamera ? 540 : video!.videoHeight || 720;
 
+        // Automatically update aspect ratio if not set yet
+        if (!useMockCamera && video && video.videoWidth > 0 && video.videoHeight > 0) {
+          const currentAspect = video.videoWidth / video.videoHeight;
+          if (streamAspect === null || Math.abs(streamAspect - currentAspect) > 0.05) {
+            setStreamAspect(currentAspect);
+          }
+        }
+
         if (targetCanvas.width !== targetCanvas.clientWidth || targetCanvas.height !== targetCanvas.clientHeight) {
           targetCanvas.width = targetCanvas.clientWidth || 960;
           targetCanvas.height = targetCanvas.clientHeight || 540;
@@ -371,7 +374,7 @@ export const CameraView = forwardRef<CameraViewHandle, CameraViewProps>(({
       active = false;
       if (animFrameIdRef.current) cancelAnimationFrame(animFrameIdRef.current);
     };
-  }, [isMirrored, onFpsUpdate, onStatsUpdate, settings, useMockCamera]);
+  }, [isMirrored, onFpsUpdate, onStatsUpdate, settings, streamAspect, useMockCamera]);
 
   // Capture execution
   const triggerCapture = useCallback(async () => {
@@ -468,8 +471,14 @@ export const CameraView = forwardRef<CameraViewHandle, CameraViewProps>(({
     toggleMockCamera,
   }));
 
+  const isPortrait = streamAspect !== null && streamAspect < 1.0;
+
   return (
-    <div className="relative w-full max-w-4xl mx-auto rounded-xl sm:rounded-2xl overflow-hidden bg-[#080808] border border-[#E5E5E5] shadow-xs flex flex-col">
+    <div
+      className={`relative w-full mx-auto rounded-xl sm:rounded-2xl overflow-hidden bg-[#080808] border border-[#E5E5E5] shadow-xs flex flex-col transition-all duration-300 ${
+        isPortrait ? 'max-w-xs sm:max-w-sm' : 'max-w-4xl'
+      }`}
+    >
       <button data-capture-trigger onClick={triggerCapture} className="hidden" />
 
       <video
@@ -480,8 +489,15 @@ export const CameraView = forwardRef<CameraViewHandle, CameraViewProps>(({
         className="hidden"
       />
 
-      {/* Main Viewport Container - Adaptive aspect ratio for mobile & desktop */}
-      <div className="relative aspect-[4/3] xs:aspect-[16/10] sm:aspect-video w-full max-h-[60vh] sm:max-h-[65vh] bg-[#080808] overflow-hidden flex items-center justify-center">
+      {/* Main Viewport Container - Adapts natively to device & video stream aspect ratio */}
+      <div
+        style={{
+          aspectRatio: streamAspect ? `${streamAspect}` : undefined,
+        }}
+        className={`relative w-full bg-[#080808] overflow-hidden flex items-center justify-center ${
+          !streamAspect ? 'aspect-[3/4] sm:aspect-video' : ''
+        } ${isPortrait ? 'max-h-[68vh]' : 'max-h-[62vh] sm:max-h-[66vh]'}`}
+      >
         {/* Real-time Color ASCII Canvas */}
         <canvas
           ref={canvasRef}
@@ -558,10 +574,15 @@ export const CameraView = forwardRef<CameraViewHandle, CameraViewProps>(({
           <span className="px-1.5 py-0.5 rounded bg-black/60 backdrop-blur-sm text-white/70 border border-white/10 uppercase font-mono">
             {resolution}
           </span>
+          {isPortrait && (
+            <span className="px-1.5 py-0.5 rounded bg-black/60 backdrop-blur-sm text-white/70 border border-white/10 text-[9px]">
+              Portrait
+            </span>
+          )}
         </div>
       </div>
 
-      {/* Understated Lower Bar - Mobile responsive layout */}
+      {/* Understated Lower Bar */}
       <div className="bg-[#0D0D0D] border-t border-[#1F1F1F] px-3 sm:px-4 py-2 flex flex-wrap items-center justify-between gap-2 text-xs text-[#888888]">
         <div className="flex items-center gap-1.5 sm:gap-2">
           {stream ? (
@@ -582,7 +603,6 @@ export const CameraView = forwardRef<CameraViewHandle, CameraViewProps>(({
             </button>
           )}
 
-          {/* Quick Camera Refresh button (helps user unstuck camera instantly) */}
           <button
             onClick={refreshCamera}
             title="Refresh Camera"
