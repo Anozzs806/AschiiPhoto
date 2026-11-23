@@ -67,6 +67,10 @@ export const CameraView = forwardRef<CameraViewHandle, CameraViewProps>(({
   const prevFacingModeRef = useRef(facingMode);
   const prevResolutionRef = useRef(resolution);
 
+  // Background auto-stop tracking (ensures camera never runs in background or when tab/window closed)
+  const wasStreamingBeforeHideRef = useRef(false);
+  const isExplicitlyStoppedRef = useRef(false);
+
   const frameCountRef = useRef(0);
   const lastFpsTimeRef = useRef(performance.now());
   const animFrameIdRef = useRef<number | null>(null);
@@ -135,6 +139,7 @@ export const CameraView = forwardRef<CameraViewHandle, CameraViewProps>(({
     targetRes: CameraResolution = resolution,
     targetFacing: 'user' | 'environment' = facingMode
   ) => {
+    isExplicitlyStoppedRef.current = false;
     setCameraError(null);
     setUseMockCamera(false);
     setIsReconnecting(true);
@@ -259,6 +264,8 @@ export const CameraView = forwardRef<CameraViewHandle, CameraViewProps>(({
   }, [facingMode, getResolutionConstraints, onAddLog, onStreamStatusChange, onSwitchingStateChange, resolution, safelyStopActiveTracks]);
 
   const stopCamera = useCallback(() => {
+    isExplicitlyStoppedRef.current = true;
+    wasStreamingBeforeHideRef.current = false;
     safelyStopActiveTracks();
     if (animFrameIdRef.current) {
       cancelAnimationFrame(animFrameIdRef.current);
@@ -308,6 +315,56 @@ export const CameraView = forwardRef<CameraViewHandle, CameraViewProps>(({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // AUTO-STOP ON CLOSE / MINIMIZE / BACKGROUND:
+  // Immediately stops camera hardware when tab/window is closed or switched to background
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        // Tab is hidden / user switched apps / locked screen / minimized browser
+        if (streamRef.current && streamRef.current.getTracks().some((t) => t.readyState === 'live')) {
+          wasStreamingBeforeHideRef.current = true;
+          safelyStopActiveTracks();
+          if (animFrameIdRef.current) {
+            cancelAnimationFrame(animFrameIdRef.current);
+            animFrameIdRef.current = null;
+          }
+          onStreamStatusChange(false);
+          onAddLog('CAM', 'Camera paused in background.');
+        }
+      } else if (document.visibilityState === 'visible') {
+        // Tab is visible again: if it was streaming before hide and wasn't stopped manually, resume!
+        if (wasStreamingBeforeHideRef.current && !isExplicitlyStoppedRef.current) {
+          wasStreamingBeforeHideRef.current = false;
+          onAddLog('CAM', 'Resuming camera stream...');
+          startCamera(resolution, facingMode);
+        }
+      }
+    };
+
+    const handlePageClose = () => {
+      // Fires on tab close, window close, navigation, or mobile browser kill
+      wasStreamingBeforeHideRef.current = false;
+      safelyStopActiveTracks();
+      if (animFrameIdRef.current) {
+        cancelAnimationFrame(animFrameIdRef.current);
+        animFrameIdRef.current = null;
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('pagehide', handlePageClose);
+    window.addEventListener('beforeunload', handlePageClose);
+    window.addEventListener('unload', handlePageClose);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('pagehide', handlePageClose);
+      window.removeEventListener('beforeunload', handlePageClose);
+      window.removeEventListener('unload', handlePageClose);
+      handlePageClose();
+    };
+  }, [facingMode, onAddLog, onStreamStatusChange, resolution, safelyStopActiveTracks, startCamera]);
 
   const toggleMockCamera = useCallback(() => {
     if (!useMockCamera) {
