@@ -134,13 +134,15 @@ export const PhotoGallery: React.FC<PhotoGalleryProps> = ({
                   </button>
                 </div>
 
-                {/* Thumbnail Image Viewport */}
+                {/* Thumbnail Image Viewport - Adaptive aspect ratio based on photo orientation */}
                 <div
                   onClick={() => {
                     sound.playKeyClick();
                     onOpenPhotoDetail(photo);
                   }}
-                  className="relative aspect-video bg-[#080808] cursor-pointer overflow-hidden flex items-center justify-center"
+                  className={`relative bg-[#080808] cursor-pointer overflow-hidden flex items-center justify-center ${
+                    photo.aspectRatio && photo.aspectRatio < 1 ? 'aspect-[3/4]' : 'aspect-video'
+                  }`}
                 >
                   <img
                     src={displayImg}
