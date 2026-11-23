@@ -50,6 +50,7 @@ export function App() {
   const [facingMode, setFacingMode] = useState<'user' | 'environment'>('user');
   const [countdownDuration, setCountdownDuration] = useState<number>(3);
   const [isStreaming, setIsStreaming] = useState(false);
+  const [isSwitchingCamera, setIsSwitchingCamera] = useState(false);
   const [fps, setFps] = useState(0);
 
   // Sound Engine
@@ -198,10 +199,13 @@ export function App() {
             onStreamStatusChange={setIsStreaming}
             onStatsUpdate={setSystemStats}
             photoCounter={photos.length}
+            isSwitching={isSwitchingCamera}
+            onSwitchingStateChange={setIsSwitchingCamera}
           />
 
           <CameraControls
             isStreaming={isStreaming}
+            isSwitching={isSwitchingCamera}
             countdownDuration={countdownDuration}
             onSetCountdown={setCountdownDuration}
             isMirrored={isMirrored}
@@ -210,6 +214,8 @@ export function App() {
             onToggleFacingMode={() => {
               const next = facingMode === 'user' ? 'environment' : 'user';
               setFacingMode(next);
+              // Auto-mirror: mirror for front selfie camera, direct for back environmental camera
+              setIsMirrored(next === 'user');
             }}
             resolution={resolution}
             onSetResolution={setResolution}
@@ -217,7 +223,7 @@ export function App() {
             onCapture={() => {
               cameraRef.current?.triggerCapture();
             }}
-            disabled={!isStreaming}
+            disabled={!isStreaming || isSwitchingCamera}
           />
         </section>
 
