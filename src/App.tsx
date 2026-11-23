@@ -177,10 +177,10 @@ export function App() {
         {/* Title & Editorial Intro */}
         <div className="text-center max-w-xl mx-auto space-y-1 pt-1 sm:pt-2">
           <h2 className="text-lg sm:text-2xl font-semibold tracking-tight text-[#171717]">
-            Color ASCII Photobooth
+            :D
           </h2>
           <p className="text-[11px] sm:text-xs text-[#737373] leading-relaxed">
-            Real-time RGB ASCII camera filter inspired by classic portraiture and clean print design.
+            Hey... I Recomended Using Pc/Laptop Better Fps Thanks!!!
           </p>
         </div>
 
