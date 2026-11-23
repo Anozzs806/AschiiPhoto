@@ -278,9 +278,9 @@ export function App() {
       {/* Minimalist Footer */}
       <footer className="border-t border-[#E5E5E5] bg-white py-6 px-4 text-center text-xs text-[#888888]">
         <div className="max-w-5xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2">
-          <span>Color ASCII Photobooth</span>
+          <span>Made By</span>
           <span className="text-[11px] text-[#A3A3A3]">
-            Minimalist Studio Edition • HTML5 Canvas API • WebRTC
+            -Anozzs
           </span>
         </div>
       </footer>
